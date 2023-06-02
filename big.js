@@ -12,7 +12,7 @@ function ce(type, className = "") {
   return Object.assign(document.createElement(type), { className });
 }
 
-addEventListener("load", () => {
+addEventListener("load", function() {
   let slideDivs = Array.from(document.querySelectorAll("body > div"));
   let pc = document.body.appendChild(ce("div", "presentation-container"));
   slideDivs = slideDivs.map((slide, _i) => {
@@ -37,21 +37,31 @@ addEventListener("load", () => {
     big = (window.big = {
       current: -1,
       mode: "talk",
-      length: slideDivs.length,
-      forward,
-      reverse,
-      go
+      forward: forward,
+      reverse: reverse,
+      go: go,
+      length: slideDivs.length
     });
-
   function forward() {
     go(big.current + 1);
   }
-
   function reverse() {
     go(big.current - 1);
   }
 
+  body.className = `talk-mode ${initialBodyClass}`;
+  window.matchMedia("print").addListener(onPrint);
+  document.addEventListener("click", onClick);
+  document.addEventListener("keydown", onKeyDown);
+  document.addEventListener("touchstart", onTouchStart);
+  addEventListener("hashchange", onHashChange);
+  addEventListener("resize", onResize);
+  window.big = big;
+  console.log("This is a big presentation. You can: \n\n* press j to jump to a slide\n" + "* press p to see the print view\n* press t to go back to the talk view");
+  go(parseHash() || big.current);
+
   function go(n, force) {
+    console.log("go")
     n = Math.max(0, Math.min(big.length - 1, n));
     if (!force && big.current === n) return;
     big.current = n;
@@ -62,7 +72,9 @@ addEventListener("load", () => {
       for (let note of sc._notes) console.log("%c%s", "padding:5px;font-family:serif;font-size:18px;line-height:150%;", note);
       console.groupEnd();
     }
-    for (let slide of slideDivs) slide.style.display = slide._i === n ? "" : "none";
+    slideDivs.forEach((slide, i) => {
+      slide.style.display = i === n ? "flex" : "none";
+    });
     body.className = `talk-mode ${slideDiv.dataset.bodyClass || ""} ${initialBodyClass}`;
     body.style.cssText = `${initialBodyStyle} ${slideDiv.dataset.bodyStyle || ""}`;
     window.clearInterval(timeoutInterval);
@@ -73,6 +85,7 @@ addEventListener("load", () => {
   }
 
   function resizeTo(sc, width, height) {
+    console.log("resize")
     let slideDiv = sc.firstChild,
       padding = Math.min(width * 0.04),
       fontSize = height;
@@ -80,18 +93,21 @@ addEventListener("load", () => {
     sc.style.height = `${height}px`;
     slideDiv.style.padding = `${padding}px`;
     if (getComputedStyle(slideDiv).display === "grid") slideDiv.style.height = `${height - padding * 2}px`;
-    for (let step of [100, 50, 10, 2]) {
-      for (; fontSize > 0; fontSize -= step) {
-        slideDiv.style.fontSize = `${fontSize}px`;
-        if (
-          slideDiv.scrollWidth <= width &&
-          slideDiv.offsetHeight <= height &&
-          Array.from(slideDiv.querySelectorAll("div")).every(elem => elem.scrollWidth <= elem.clientWidth && elem.scrollHeight <= elem.clientHeight)
-        ) {
-          break;
+    
+    if (!(slideDiv.children.length == 1 && slideDiv.children[0].tagName == "IMG")) {
+      for (let step of [100, 50, 10, 2]) {
+        for (; fontSize > 0; fontSize -= step) {
+          slideDiv.style.fontSize = `${fontSize}px`;
+          if (
+            slideDiv.scrollWidth <= width &&
+            slideDiv.offsetHeight <= height &&
+            Array.from(slideDiv.querySelectorAll("div")).every(elem => elem.scrollWidth <= elem.clientWidth && elem.scrollHeight <= elem.clientHeight)
+          ) {
+            break;
+          }
         }
+        fontSize += step;
       }
-      fontSize += step;
     }
   }
 
@@ -176,6 +192,66 @@ addEventListener("load", () => {
     }
     let m = { p: onPrint, t: onTalk, j: onJump }[e.key];
     if (m) m(big.current);
+    if (big.mode !== "jump") return;
+    let { activeElement } = document;
+    if (activeElement && activeElement.classList.contains("slide")) {
+      let startIndex = slideDivs.indexOf(activeElement.parentNode),
+        columnIndexes = getColumnIndexes(activeElement);
+      jumpFocus(
+        e,
+        {
+          ArrowLeft: startIndex - 1,
+          ArrowRight: startIndex + 1,
+          ArrowDown: columnIndexes.next,
+          ArrowUp: columnIndexes.prev
+        }[e.key]
+      );
+    } else if (e.key.indexOf("Arrow") === 0) {
+      jumpFocus(e, 0);
+    }
+  }
+
+  function getColumnIndexes(activeElement) {
+    let { left } = activeElement.getBoundingClientRect(),
+      lastIndex,
+      foundSelf = false;
+    for (let i = 0; i < slideDivs.length; i++) {
+      if (slideDivs[i].firstChild.getBoundingClientRect().left === left) {
+        if (foundSelf) return { prev: lastIndex, next: i };
+        if (slideDivs[i] === activeElement.parentNode) {
+          foundSelf = true;
+        } else {
+          lastIndex = i;
+        }
+      }
+    }
+    return { prev: lastIndex };
+  }
+
+  function jumpFocus(e, i) {
+    if (!slideDivs[i]) return;
+    e.preventDefault();
+    slideDivs[i].firstChild.focus();
+  }
+
+  function onTouchStart(e) {
+    if (big.mode !== "talk") return;
+    let { pageX: startingPageX } = e.changedTouches[0];
+    document.addEventListener(
+      "touchend",
+      function(e2) {
+        let distanceTraveled = e2.changedTouches[0].pageX - startingPageX;
+        // Don't navigate if the person didn't swipe by fewer than 4 pixels
+        if (Math.abs(distanceTraveled) < 4) return;
+        if (distanceTraveled < 0) forward();
+        else reverse();
+      },
+      { once: true }
+    );
+  }
+
+  function onHashChange() {
+    if (big.mode === "talk") go(parseHash());
   }
 
   function onResize() {
@@ -187,30 +263,4 @@ addEventListener("load", () => {
     }
     resizeTo(slideDivs[big.current], width, height);
   }
-
-  window.matchMedia("print").addListener(onPrint);
-  document.addEventListener("click", onClick);
-  document.addEventListener("keydown", onKeyDown);
-  document.addEventListener("touchstart", e => {
-    if (big.mode !== "talk") return;
-    let { pageX: startingPageX } = e.changedTouches[0];
-    document.addEventListener(
-      "touchend",
-      e2 => {
-        let distanceTraveled = e2.changedTouches[0].pageX - startingPageX;
-        // Don't navigate if the person didn't swipe by fewer than 4 pixels
-        if (Math.abs(distanceTraveled) < 4) return;
-        if (distanceTraveled < 0) forward();
-        else reverse();
-      },
-      { once: true }
-    );
-  });
-  addEventListener("hashchange", () => {
-    if (big.mode === "talk") go(parseHash());
-  });
-  addEventListener("resize", onResize);
-  console.log("This is a big presentation. You can: \n\n* press j to jump to a slide\n" + "* press p to see the print view\n* press t to go back to the talk view");
-  body.className = `talk-mode ${initialBodyClass}`;
-  go(parseHash() || big.current);
 });
