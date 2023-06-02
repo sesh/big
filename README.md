@@ -1,3 +1,13 @@
+## Changes from [`tmcw/big`](https://github.com/tmcw/big)
+
+- Slides with a single image do not set font-size, this fixes image alignment issues
+
+Other notable forks with updates:
+
+- [carlesbellver/big](https://github.com/carlesbellver/big)
+
+---
+
 # Big
 
 <p align="center">
