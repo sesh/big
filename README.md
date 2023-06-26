@@ -1,4 +1,4 @@
-## Changes from [`tmcw/big`](https://github.com/tmcw/big)
+#### Changes from [`tmcw/big`](https://github.com/tmcw/big)
 
 - Slides with a single image do not set font-size, this fixes image alignment issues
 
